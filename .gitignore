@@ -1,0 +1,83 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (no necesario para la app)
+node_modules/
+package-lock.json
+package.json
+
+# Archivos temporales de Excel
+~$*.xlsx
+*.xlsxp*.part
+
+# Videos y medios pesados
+*.mp4
+*.webm
+*.avi
+*.jpeg
+*.jpg
+Fotos_Referencia/
+Videos/
+
+# Excel y CSV sueltos en la raiz (datos personales, no parte de la app)
+/*.xlsx
+/*.csv
+_concat_list.txt
+
+# Excel de backup en data/ (los datos viven en si_quiero.db)
+data/*.xlsx
+
+# Scripts de migracion y analisis (one-time, no parte de la app)
+_migrate_real_data.py
+_migrate_excel_to_sqlite.py
+_generate_sample_data.py
+Analisis_Vta_Gral_Sep25.py
+Heatmap_Julio_24.py
+analisis_libro_completo.py
+analisis_libro_caja.py
+analisis_plan_pagos.py
+prediccion_demanda.py
+Si_Quiero_Tickets.py
+Estadistica_sabores.py
+Estadistica_por_producto.py
+Historico_pedidos.py
+Planes_de_pago.py
+recetas.py
+veo_genera_video.js
+*.jpg
+
+# Vistas obsoletas (reemplazadas en la version actual)
+views/p03_actualizacion_costos.py
+views/p04_rentabilidad_productos.py
+views/p05_rentabilidad_combos.py
+views/p06_simulador.py
+views/p07_ingenieria_menu.py
+
+# Streamlit secrets (NUNCA subir al repo)
+.streamlit/secrets.toml
+
+# Cursor/editor
+.cursor/
