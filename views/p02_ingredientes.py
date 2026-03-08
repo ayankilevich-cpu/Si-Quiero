@@ -20,20 +20,24 @@ def render(loader, engine, **kwargs):
         st.warning("No hay ingredientes cargados.")
         return
 
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "Listado", "Actualizar costo manual", "Importar desde Excel", "Historial",
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "Listado", "Editar / Eliminar", "Actualizar costo manual",
+        "Importar desde Excel", "Historial",
     ])
 
     with tab1:
         _render_listado(df, loader)
 
     with tab2:
-        _render_manual(df, price_svc)
+        _render_editar_eliminar(df, loader)
 
     with tab3:
-        _render_excel(price_svc)
+        _render_manual(df, price_svc)
 
     with tab4:
+        _render_excel(price_svc)
+
+    with tab5:
         _render_historial(loader)
 
 
@@ -58,6 +62,100 @@ def _render_listado(df, loader):
         hide_index=True,
     )
     st.caption(f"{len(df)} ingredientes")
+
+
+def _render_editar_eliminar(df, loader):
+    st.subheader("Editar o eliminar ingrediente")
+
+    opciones = dict(zip(
+        df["ingrediente"].tolist(),
+        df["ingredient_id"].tolist(),
+    ))
+    nombre = st.selectbox("Seleccionar ingrediente", sorted(opciones.keys()), key="ing_edit_sel")
+    ing_id = opciones.get(nombre)
+    if ing_id is None:
+        return
+
+    idx = df[df["ingredient_id"] == ing_id].index
+    if idx.empty:
+        return
+    row = df.loc[idx[0]]
+
+    # ── Formulario de edición ──
+    with st.expander("Modificar datos", expanded=True):
+        col_a, col_b = st.columns(2)
+        new_nombre = col_a.text_input("Nombre", value=str(row.get("ingrediente", "")), key="ed_nombre")
+        new_rubro = col_b.selectbox(
+            "Rubro",
+            RUBROS_INGREDIENTES,
+            index=RUBROS_INGREDIENTES.index(str(row.get("rubro", "")))
+            if str(row.get("rubro", "")) in RUBROS_INGREDIENTES else 0,
+            key="ed_rubro",
+        )
+
+        col_c, col_d = st.columns(2)
+        unidades = ["GRAMOS", "MILILITROS", "UNIDAD"]
+        new_unidad = col_c.selectbox(
+            "Unidad base",
+            unidades,
+            index=unidades.index(str(row.get("unidad_base", "GRAMOS")))
+            if str(row.get("unidad_base", "GRAMOS")) in unidades else 0,
+            key="ed_unidad",
+        )
+        new_costo = col_d.number_input(
+            "Costo actual ($)",
+            min_value=0.0,
+            value=float(row.get("costo_actual", 0)),
+            step=10.0,
+            format="%.4f",
+            key="ed_costo",
+        )
+
+        col_e, col_f = st.columns(2)
+        new_proveedor = col_e.text_input("Proveedor", value=str(row.get("proveedor", "") or ""), key="ed_prov")
+        new_notas = col_f.text_input("Notas", value=str(row.get("notas", "") or ""), key="ed_notas")
+
+        cambios = (
+            new_nombre.strip() != str(row.get("ingrediente", "")).strip()
+            or new_rubro != str(row.get("rubro", ""))
+            or new_unidad != str(row.get("unidad_base", ""))
+            or round(new_costo, 4) != round(float(row.get("costo_actual", 0)), 4)
+            or new_proveedor.strip() != str(row.get("proveedor", "") or "").strip()
+            or new_notas.strip() != str(row.get("notas", "") or "").strip()
+        )
+
+        if st.button("Guardar cambios", key="btn_save_ing", disabled=not cambios, type="primary"):
+            df.at[idx[0], "ingrediente"] = new_nombre.strip()
+            df.at[idx[0], "rubro"] = new_rubro
+            df.at[idx[0], "unidad_base"] = new_unidad
+            df.at[idx[0], "costo_actual"] = new_costo
+            df.at[idx[0], "proveedor"] = new_proveedor.strip()
+            df.at[idx[0], "notas"] = new_notas.strip()
+            df.at[idx[0], "ultimo_update"] = date.today()
+            loader.save_ingredientes(df)
+            st.success(f"Ingrediente '{new_nombre.strip()}' actualizado correctamente.")
+            st.rerun()
+
+    # ── Eliminar ──
+    st.markdown("---")
+    with st.expander("Eliminar ingrediente"):
+        st.warning(
+            f"Vas a eliminar **{row['ingrediente']}** (ID {ing_id}). "
+            "Si este ingrediente es usado en recetas o componentes, "
+            "el costeo de esos productos dejará de funcionar."
+        )
+        confirmacion = st.text_input(
+            "Escribí el nombre del ingrediente para confirmar:",
+            key="confirm_del_ing",
+        )
+        if st.button("Eliminar", key="btn_del_ing", type="primary"):
+            if confirmacion.strip().upper() == str(row["ingrediente"]).strip().upper():
+                df = df.drop(index=idx[0]).reset_index(drop=True)
+                loader.save_ingredientes(df)
+                st.success(f"Ingrediente '{row['ingrediente']}' eliminado.")
+                st.rerun()
+            else:
+                st.error("El nombre no coincide. Escribilo exactamente para confirmar.")
 
 
 def _render_manual(df, price_svc):
