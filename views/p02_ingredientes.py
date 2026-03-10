@@ -196,33 +196,168 @@ def _render_manual(df, price_svc):
             st.warning("Ingrese precio y cantidad válidos.")
 
 
+_SYSTEM_COL_MAP = {
+    "Código": "ingredient_id",
+    "Nombre": "ingrediente",
+    "Costo": "costo_actual",
+    "Alicuota": "alicuota_iva",
+    "U. de medida": "unidad_base",
+    "U. medida de compra": "unidad_compra",
+    "Rubro": "rubro",
+    "Sub Rubro": "subrubro",
+    "Conversión": "factor_compra_a_base",
+    "Proveedor": "proveedor",
+}
+
+
+def _parse_system_export(uploaded) -> pd.DataFrame | None:
+    """Lee un Excel exportado por el sistema de gestión.
+
+    Auto-detecta la fila de encabezados buscando 'Código' en la primera columna.
+    Mapea las columnas del sistema a nombres internos y parsea decimales con coma.
+    """
+    raw = pd.read_excel(uploaded, engine="openpyxl", header=None)
+
+    header_row = None
+    for i in range(min(15, len(raw))):
+        vals = [str(v).strip() for v in raw.iloc[i].values if pd.notna(v)]
+        if "Código" in vals or "Codigo" in vals:
+            header_row = i
+            break
+
+    if header_row is None:
+        return None
+
+    df = pd.read_excel(uploaded, engine="openpyxl", header=header_row)
+    df = df.dropna(how="all")
+    df.columns = [str(c).strip() for c in df.columns]
+
+    rename = {k: v for k, v in _SYSTEM_COL_MAP.items() if k in df.columns}
+    df = df.rename(columns=rename)
+
+    if "ingredient_id" not in df.columns:
+        return None
+
+    def _parse_comma_number(val):
+        if pd.isna(val):
+            return 0.0
+        s = str(val).strip().replace(".", "").replace(",", ".")
+        try:
+            return float(s)
+        except ValueError:
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return 0.0
+
+    for col in ("alicuota_iva", "factor_compra_a_base"):
+        if col in df.columns:
+            df[col] = df[col].apply(_parse_comma_number)
+
+    if "costo_actual" in df.columns:
+        df["costo_actual"] = pd.to_numeric(df["costo_actual"], errors="coerce").fillna(0)
+
+    df["ingredient_id"] = pd.to_numeric(df["ingredient_id"], errors="coerce")
+    df = df.dropna(subset=["ingredient_id"])
+    df["ingredient_id"] = df["ingredient_id"].astype(int)
+
+    return df
+
+
 def _render_excel(price_svc):
-    st.subheader("Importar costos desde Excel")
+    st.subheader("Importar ingredientes desde Excel")
 
     if not price_svc:
         st.warning("Servicio de precios no disponible.")
         return
 
-    st.markdown("El archivo debe tener al menos las columnas: `ingredient_id`, `costo_actual`")
+    st.markdown(
+        "Acepta el archivo exportado por el sistema de gestión "
+        "(formato con encabezados: Código, Nombre, Costo, etc.) "
+        "o cualquier Excel con columnas `ingredient_id` y `costo_actual`."
+    )
 
     uploaded = st.file_uploader("Subir archivo Excel", type=["xlsx", "xls"], key="excel_precios")
-    if uploaded:
-        try:
-            df_up = pd.read_excel(uploaded, engine="openpyxl")
-            st.dataframe(df_up.head(10), width="stretch")
+    if not uploaded:
+        return
 
-            if st.button("Importar precios", type="primary", key="btn_import"):
-                result = price_svc.actualizar_desde_excel(df_up)
-                if result["ok"]:
-                    st.success(f"✅ {result['actualizados']} ingredientes actualizados")
-                    if result.get("errores"):
-                        for e in result["errores"]:
-                            st.warning(e)
-                    st.rerun()
-                else:
-                    st.error(result.get("error", "Error de importación"))
-        except Exception as e:
-            st.error(f"Error leyendo archivo: {e}")
+    try:
+        df_parsed = _parse_system_export(uploaded)
+
+        if df_parsed is not None:
+            st.success("Formato del sistema detectado correctamente.")
+            df_up = df_parsed
+        else:
+            uploaded.seek(0)
+            df_up = pd.read_excel(uploaded, engine="openpyxl")
+
+        if "ingredient_id" not in df_up.columns or "costo_actual" not in df_up.columns:
+            st.error("El archivo no contiene las columnas requeridas: `ingredient_id`, `costo_actual`.")
+            return
+
+        df_existing = price_svc.loader.load_ingredientes()
+        existing_ids = set(df_existing["ingredient_id"].tolist())
+        import_ids = set(df_up["ingredient_id"].tolist())
+
+        ids_update = import_ids & existing_ids
+        ids_new = import_ids - existing_ids
+
+        df_updates = df_up[df_up["ingredient_id"].isin(ids_update)].copy()
+        df_nuevos = df_up[df_up["ingredient_id"].isin(ids_new)].copy()
+
+        st.markdown("---")
+        col_k1, col_k2, col_k3 = st.columns(3)
+        col_k1.metric("Total en archivo", len(df_up))
+        col_k2.metric("Actualizarán", len(df_updates))
+        col_k3.metric("Nuevos", len(df_nuevos))
+
+        preview_cols = [c for c in ["ingredient_id", "ingrediente", "costo_actual",
+                                     "unidad_base", "rubro", "proveedor"] if c in df_up.columns]
+
+        if not df_updates.empty:
+            with st.expander(f"Vista previa: {len(df_updates)} ingredientes a actualizar", expanded=True):
+                merged = df_updates[preview_cols].merge(
+                    df_existing[["ingredient_id", "costo_actual"]].rename(
+                        columns={"costo_actual": "costo_anterior"}
+                    ),
+                    on="ingredient_id", how="left",
+                )
+                if "costo_anterior" in merged.columns and "costo_actual" in merged.columns:
+                    merged["diferencia"] = merged["costo_actual"] - merged["costo_anterior"]
+                st.dataframe(merged, width="stretch", hide_index=True, height=300)
+
+        if not df_nuevos.empty:
+            with st.expander(f"Vista previa: {len(df_nuevos)} ingredientes nuevos"):
+                st.dataframe(df_nuevos[preview_cols], width="stretch", hide_index=True)
+
+        st.markdown("---")
+        modo = st.radio(
+            "Acción al importar",
+            ["Solo actualizar existentes", "Actualizar existentes + agregar nuevos"],
+            key="import_modo",
+        )
+
+        if st.button("Importar", type="primary", key="btn_import"):
+            result = price_svc.importar_completo(
+                df_up,
+                agregar_nuevos=(modo == "Actualizar existentes + agregar nuevos"),
+            )
+            if result["ok"]:
+                partes = []
+                if result["actualizados"] > 0:
+                    partes.append(f"{result['actualizados']} actualizados")
+                if result["agregados"] > 0:
+                    partes.append(f"{result['agregados']} nuevos agregados")
+                st.success(f"Importación exitosa: {', '.join(partes)}")
+                if result.get("errores"):
+                    for e in result["errores"][:20]:
+                        st.warning(e)
+                st.rerun()
+            else:
+                st.error(result.get("error", "Error de importación"))
+
+    except Exception as e:
+        st.error(f"Error leyendo archivo: {e}")
 
 
 def _render_historial(loader):

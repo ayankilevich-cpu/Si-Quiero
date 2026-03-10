@@ -103,3 +103,96 @@ class PriceUpdateService:
             self.loader.append_historial(historial)
 
         return {"ok": True, "actualizados": actualizados, "errores": errores}
+
+    _UPDATABLE_FIELDS = [
+        "ingrediente", "costo_actual", "alicuota_iva", "unidad_base",
+        "unidad_compra", "factor_compra_a_base", "rubro", "subrubro", "proveedor",
+    ]
+
+    def importar_completo(
+        self,
+        uploaded_df: pd.DataFrame,
+        agregar_nuevos: bool = False,
+    ) -> dict:
+        """Importa ingredientes desde un DataFrame: actualiza existentes y opcionalmente agrega nuevos."""
+        required = {"ingredient_id", "costo_actual"}
+        if not required.issubset(set(uploaded_df.columns)):
+            return {
+                "ok": False,
+                "error": f"Columnas requeridas: {required}. Encontradas: {set(uploaded_df.columns)}",
+            }
+
+        df_ing = self.loader.load_ingredientes()
+        existing_ids = set(df_ing["ingredient_id"].tolist())
+
+        actualizados = 0
+        agregados = 0
+        errores: list[str] = []
+        historial: list[dict] = []
+
+        for _, row in uploaded_df.iterrows():
+            iid = int(row["ingredient_id"])
+            nuevo_costo = float(row.get("costo_actual", 0) or 0)
+
+            if iid in existing_ids:
+                mask = df_ing["ingredient_id"] == iid
+                idx = df_ing[mask].index[0]
+                anterior = float(df_ing.at[idx, "costo_actual"] or 0)
+
+                for field in self._UPDATABLE_FIELDS:
+                    if field in row.index and pd.notna(row[field]):
+                        val = row[field]
+                        if field == "costo_actual":
+                            val = round(float(val), 4)
+                        df_ing.at[idx, field] = val
+
+                df_ing.at[idx, "ultimo_update"] = date.today()
+                df_ing.at[idx, "requiere_revision_costo"] = False
+
+                if nuevo_costo > 0 and round(nuevo_costo, 4) != round(anterior, 4):
+                    historial.append({
+                        "fecha": date.today(),
+                        "ingredient_id": iid,
+                        "precio_anterior": anterior,
+                        "precio_nuevo": round(nuevo_costo, 4),
+                        "origen": "excel",
+                    })
+                actualizados += 1
+
+            elif agregar_nuevos:
+                nombre = str(row.get("ingrediente", "")).strip()
+                if not nombre:
+                    errores.append(f"ID {iid}: sin nombre, ignorado")
+                    continue
+
+                new_row = {
+                    "ingredient_id": iid,
+                    "ingrediente": nombre,
+                    "ingrediente_norm": nombre.upper(),
+                    "costo_actual": round(nuevo_costo, 4),
+                    "alicuota_iva": float(row.get("alicuota_iva", 21.0) or 21.0),
+                    "unidad_base": str(row.get("unidad_base", "UNIDAD") or "UNIDAD"),
+                    "unidad_compra": str(row.get("unidad_compra", "") or ""),
+                    "factor_compra_a_base": float(row.get("factor_compra_a_base", 1.0) or 1.0),
+                    "rubro": str(row.get("rubro", "") or ""),
+                    "subrubro": str(row.get("subrubro", "") or ""),
+                    "proveedor": str(row.get("proveedor", "") or ""),
+                    "requiere_revision_costo": True,
+                    "notas": "",
+                    "activo": True,
+                    "ultimo_update": date.today(),
+                }
+                df_ing = pd.concat([df_ing, pd.DataFrame([new_row])], ignore_index=True)
+                existing_ids.add(iid)
+                agregados += 1
+
+        self.loader.save_ingredientes(df_ing)
+        if historial:
+            self.loader.append_historial(historial)
+
+        return {
+            "ok": True,
+            "actualizados": actualizados,
+            "agregados": agregados,
+            "errores": errores,
+        }
