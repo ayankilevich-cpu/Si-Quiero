@@ -18,8 +18,9 @@ def render(loader, engine, **kwargs):
         st.warning("No hay productos cargados.")
         return
 
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "Fichas de costeo", "Catálogo", "Componentes", "Costeo rápido",
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "Fichas de costeo", "Catálogo", "Modificar precio",
+        "Componentes", "Costeo rápido",
     ])
 
     with tab1:
@@ -29,9 +30,12 @@ def render(loader, engine, **kwargs):
         _render_catalogo(df_prod)
 
     with tab3:
-        _render_componentes(df_prod, df_comp)
+        _render_modificar_precio(df_prod, loader, engine)
 
     with tab4:
+        _render_componentes(df_prod, df_comp)
+
+    with tab5:
         _render_costeo(df_prod, engine)
 
 
@@ -174,6 +178,79 @@ def _render_fichas(df_prod, engine):
                     st.plotly_chart(fig, width="stretch", key=f"pie_{f['pid']}")
             else:
                 st.caption("Sin detalle de composición disponible.")
+
+
+# ─────────────────────────────────────────────
+# MODIFICAR PRECIO DE VENTA
+# ─────────────────────────────────────────────
+
+def _render_modificar_precio(df_prod, loader, engine):
+    st.subheader("Modificar precio de venta")
+    st.caption(
+        "Cambiá el precio de venta de un producto. "
+        "El nuevo precio se aplica de inmediato al análisis de rentabilidad."
+    )
+
+    ncol = _nombre_col(df_prod)
+    opciones = dict(zip(
+        df_prod[ncol].tolist(),
+        df_prod["product_id"].tolist(),
+    ))
+    sel = st.selectbox("Producto", sorted(opciones.keys()), key="mod_precio_sel")
+    pid = opciones.get(sel)
+    if pid is None:
+        return
+
+    mask = df_prod["product_id"] == pid
+    row = df_prod.loc[mask].iloc[0]
+    precio_actual = float(row.get("precio_venta_actual", 0) or 0)
+
+    result = engine.costo_producto(str(pid))
+    costo = result.get("costo", 0)
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Precio actual", fmt_ars(precio_actual))
+    c2.metric("Costo", fmt_ars(costo))
+    margen_actual = result.get("margen_pct", 0)
+    c3.metric("Margen actual", fmt_pct(margen_actual))
+
+    nuevo_precio = st.number_input(
+        "Nuevo precio de venta ($)",
+        min_value=0.0,
+        value=precio_actual,
+        step=100.0,
+        format="%.0f",
+        key="mod_precio_input",
+    )
+
+    if nuevo_precio != precio_actual and nuevo_precio > 0:
+        nuevo_margen = (nuevo_precio - costo) / nuevo_precio * 100 if nuevo_precio > 0 else 0
+        nuevo_fc = costo / nuevo_precio * 100 if nuevo_precio > 0 else 0
+        nuevo_estado = estado_margen(nuevo_margen) if nuevo_precio > 0 else "Sin precio"
+
+        st.markdown("**Simulación con nuevo precio:**")
+        s1, s2, s3, s4 = st.columns(4)
+        delta_precio = nuevo_precio - precio_actual
+        delta_margen = nuevo_margen - margen_actual
+        s1.metric("Nuevo precio", fmt_ars(nuevo_precio), delta=f"{delta_precio:+,.0f}")
+        s2.metric("Nuevo margen", fmt_pct(nuevo_margen), delta=f"{delta_margen:+.1f} pp")
+        s3.metric("Nuevo Food Cost", fmt_pct(nuevo_fc))
+        s4.metric("Estado", nuevo_estado)
+
+    if st.button(
+        "Guardar nuevo precio",
+        type="primary",
+        key="btn_save_precio",
+        disabled=(nuevo_precio == precio_actual or nuevo_precio <= 0),
+    ):
+        df_fresh = loader.load_productos()
+        df_fresh.loc[df_fresh["product_id"] == pid, "precio_venta_actual"] = nuevo_precio
+        loader.save_productos(df_fresh)
+        st.success(
+            f"Precio de **{sel}** actualizado: "
+            f"{fmt_ars(precio_actual)} → {fmt_ars(nuevo_precio)}"
+        )
+        st.rerun()
 
 
 # ─────────────────────────────────────────────
