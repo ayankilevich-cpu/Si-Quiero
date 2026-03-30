@@ -55,6 +55,7 @@ PAGES = {
     "Rentabilidad combos": "p07_rentabilidad_combos",
     "Simulador": "p08_simulador",
     "Ingeniería de menú": "p09_ingenieria_menu",
+    "Carga de ventas": "p10_carga_ventas",
 }
 
 with st.sidebar:
@@ -100,6 +101,8 @@ elif module_name == "p08_simulador":
     from views.p08_simulador import render as page_render
 elif module_name == "p09_ingenieria_menu":
     from views.p09_ingenieria_menu import render as page_render
+elif module_name == "p10_carga_ventas":
+    from views.p10_carga_ventas import render as page_render
 
 page_render(
     loader, engine,

@@ -206,6 +206,28 @@ class DataLoader:
             conn.close()
         return df
 
+    # ── Ventas: escritura ──
+
+    def save_ventas(self, df: pd.DataFrame) -> None:
+        self._save_replace("ventas", df, drop_pk="rowid_pk")
+
+    def save_ventas_resumen(self, df: pd.DataFrame) -> None:
+        self._save_replace("ventas_resumen", df, drop_pk="rowid_pk")
+
+    def append_ventas(self, df: pd.DataFrame) -> int:
+        """Agrega filas nuevas a ventas sin borrar las existentes.
+        Devuelve la cantidad de filas insertadas."""
+        clean = df.copy()
+        if "rowid_pk" in clean.columns:
+            clean = clean.drop(columns=["rowid_pk"])
+        conn = self._conn()
+        try:
+            clean.to_sql("ventas", conn, if_exists="append", index=False)
+            conn.commit()
+        finally:
+            conn.close()
+        return len(clean)
+
     # ── Historial de precios ──
 
     def load_historial_precios(self) -> pd.DataFrame:
