@@ -385,7 +385,7 @@ def _render_analisis_tickets(loader):
 
     with col_right:
         fig_items = px.histogram(
-            tickets, x="items", nbins=max(tickets["items"].max(), 1),
+            tickets, x="items", nbins=int(max(tickets["items"].max(), 1)),
             title="Cantidad de ítems por ticket",
             labels={"items": "Ítems en el ticket", "count": "Cantidad de tickets"},
             color_discrete_sequence=["#6C5B7B"],
