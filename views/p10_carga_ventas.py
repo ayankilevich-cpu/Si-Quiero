@@ -8,7 +8,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from utils.helpers import fmt_ars, fmt_pct
+from utils.helpers import fmt_ars, fmt_pct, calcular_margen_pct, calcular_food_cost_pct
 
 
 _POS_COL_MAP = {
@@ -104,6 +104,46 @@ def _parse_pos_export(uploaded) -> pd.DataFrame | None:
     return df[col_order]
 
 
+def _stamp_costs(df: pd.DataFrame, engine) -> pd.DataFrame:
+    """Estampa costo_unitario, margen_pct y food_cost_pct en cada línea de venta
+    usando los costos vigentes del CostEngine en este momento."""
+    tabla = engine.tabla_rentabilidad_productos()
+    if tabla.empty:
+        df["costo_unitario"] = None
+        df["margen_pct"] = None
+        df["food_cost_pct"] = None
+        return df
+
+    cost_map = {}
+    for _, row in tabla.iterrows():
+        key = str(row["Producto"]).strip().upper()
+        cost_map[key] = {
+            "costo": float(row.get("Costo", 0) or 0),
+            "precio": float(row.get("Precio venta", 0) or 0),
+        }
+
+    costos = []
+    margenes = []
+    fcs = []
+    for _, row in df.iterrows():
+        pn = str(row.get("producto_norm", "")).strip().upper()
+        info = cost_map.get(pn)
+        if info and info["costo"] > 0:
+            costos.append(info["costo"])
+            margenes.append(calcular_margen_pct(info["precio"], info["costo"]))
+            fcs.append(calcular_food_cost_pct(info["costo"], info["precio"]))
+        else:
+            costos.append(None)
+            margenes.append(None)
+            fcs.append(None)
+
+    df = df.copy()
+    df["costo_unitario"] = costos
+    df["margen_pct"] = margenes
+    df["food_cost_pct"] = fcs
+    return df
+
+
 def _build_resumen(df: pd.DataFrame) -> pd.DataFrame:
     """Genera ventas_resumen a partir del detalle de ventas."""
     agg = df.groupby("producto_norm").agg(
@@ -165,7 +205,7 @@ def render(loader, engine, **kwargs):
     ])
 
     with tab1:
-        _render_importar(loader)
+        _render_importar(loader, engine)
 
     with tab2:
         _render_datos_actuales(loader)
@@ -174,7 +214,7 @@ def render(loader, engine, **kwargs):
         _render_analisis_tickets(loader)
 
 
-def _render_importar(loader):
+def _render_importar(loader, engine):
     st.subheader("Importar ventas del sistema")
     st.markdown(
         "Subí el archivo **Detalle de productos vendidos por pedido** "
@@ -271,12 +311,16 @@ def _render_importar(loader):
 
     if col_b.button("Importar ventas", type="primary", key="btn_import_ventas"):
         with st.spinner("Importando ventas..."):
+            df_stamped = _stamp_costs(df_parsed, engine)
+            n_stamped = df_stamped["costo_unitario"].notna().sum()
+            n_total = len(df_stamped)
+
             if "Reemplazar" in modo:
-                loader.save_ventas(df_parsed)
+                loader.save_ventas(df_stamped)
                 loader.save_ventas_resumen(df_resumen)
-                msg_ventas = f"{len(df_parsed):,} registros cargados (reemplazo completo)"
+                msg_ventas = f"{n_total:,} registros cargados (reemplazo completo)"
             else:
-                inserted = loader.append_ventas(df_parsed)
+                inserted = loader.append_ventas(df_stamped)
                 all_ventas = loader.load_ventas()
                 new_resumen = _build_resumen(all_ventas)
                 loader.save_ventas_resumen(new_resumen)
@@ -288,7 +332,8 @@ def _render_importar(loader):
                 n_upd = _update_productos_with_sales(loader, final_resumen)
                 msg_prod = f" · {n_upd} productos actualizados con datos de venta"
 
-        st.success(f"Importación exitosa: {msg_ventas}{msg_prod}")
+        cost_info = f" · Costos estampados en {n_stamped}/{n_total} líneas"
+        st.success(f"Importación exitosa: {msg_ventas}{msg_prod}{cost_info}")
         st.rerun()
 
 

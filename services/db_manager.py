@@ -117,7 +117,10 @@ CREATE TABLE IF NOT EXISTS ventas (
     rubro           TEXT DEFAULT '',
     subrubro        TEXT DEFAULT '',
     area            TEXT DEFAULT '',
-    sector          TEXT DEFAULT ''
+    sector          TEXT DEFAULT '',
+    costo_unitario  REAL,
+    margen_pct      REAL,
+    food_cost_pct   REAL
 );
 CREATE INDEX IF NOT EXISTS idx_ventas_fecha ON ventas(fecha_hora);
 
@@ -157,11 +160,23 @@ def get_connection(db_path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+_MIGRATIONS = [
+    "ALTER TABLE ventas ADD COLUMN costo_unitario REAL",
+    "ALTER TABLE ventas ADD COLUMN margen_pct REAL",
+    "ALTER TABLE ventas ADD COLUMN food_cost_pct REAL",
+]
+
+
 def init_db(db_path: Path | None = None) -> None:
-    """Crea las tablas si no existen."""
+    """Crea las tablas si no existen y aplica migraciones pendientes."""
     conn = get_connection(db_path)
     try:
         conn.executescript(_DDL)
+        for stmt in _MIGRATIONS:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass  # column already exists
         conn.commit()
     finally:
         conn.close()

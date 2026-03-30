@@ -105,8 +105,21 @@ def render(loader, engine, **kwargs):
     total_unidades = df_filt["cantidad"].sum() if not df_filt.empty else 0
     n_productos = df_filt["producto_norm"].nunique() if not df_filt.empty else 0
 
-    margen_prom = 0
-    if not tabla.empty and not df_filt.empty:
+    cmv = 0.0
+    margen_prom = 0.0
+    has_stamped = (
+        not df_filt.empty
+        and "costo_unitario" in df_filt.columns
+        and df_filt["costo_unitario"].notna().any()
+    )
+
+    if has_stamped:
+        df_costed = df_filt[df_filt["costo_unitario"].notna()]
+        cmv = (df_costed["costo_unitario"] * df_costed["cantidad"]).sum()
+        fact_costed = df_costed["total"].sum()
+        if fact_costed > 0:
+            margen_prom = (fact_costed - cmv) / fact_costed * 100
+    elif not tabla.empty and not df_filt.empty:
         ventas_prod = df_filt.groupby("producto_norm")["total"].sum()
         merged_m = tabla.copy()
         merged_m["_key"] = merged_m["Producto"].str.strip().str.upper()
@@ -115,8 +128,6 @@ def render(loader, engine, **kwargs):
         total_matched = merged_m["_fact"].sum()
         if total_matched > 0:
             margen_prom = (merged_m["Margen %"] * merged_m["_fact"]).sum() / total_matched
-        else:
-            margen_prom = tabla.loc[tabla["Costo"] > 0, "Margen %"].mean()
 
     col1.metric("Facturación total", fmt_ars(total_facturacion))
     col2.metric("Unidades vendidas", f"{int(total_unidades):,}".replace(",", "."))
@@ -136,15 +147,15 @@ def render(loader, engine, **kwargs):
     col5, col6, col7, col8 = st.columns(4)
     col5.metric("Tickets", f"{n_tickets:,}".replace(",", "."))
     col6.metric("Ticket promedio", fmt_ars(ticket_prom))
-    col7.metric("Facturación helado", fmt_ars(fact_helado))
-    col8.metric("Participación helado", fmt_pct(pct_helado))
+    col7.metric("CMV", fmt_ars(cmv))
+    food_cost_global = (cmv / total_facturacion * 100) if total_facturacion > 0 else 0
+    col8.metric("Food Cost %", fmt_pct(food_cost_global))
 
     col9, col10, col11, col12 = st.columns(4)
-    col9.metric("Costo helado / kg", fmt_ars(helado_info["costo_kg"]))
-    col10.metric("Helado comprado", f'{helado_info["total_kg"]:,.1f} kg')
-    col11.metric("Remitos cargados", helado_info["n_remitos"])
-    fact_no_helado = total_facturacion - fact_helado
-    col12.metric("Fact. sin helado", fmt_ars(fact_no_helado))
+    col9.metric("Facturación helado", fmt_ars(fact_helado))
+    col10.metric("Participación helado", fmt_pct(pct_helado))
+    col11.metric("Costo helado / kg", fmt_ars(helado_info["costo_kg"]))
+    col12.metric("Helado comprado", f'{helado_info["total_kg"]:,.1f} kg')
 
     st.divider()
 

@@ -186,7 +186,8 @@ class DataLoader:
         try:
             df = pd.read_sql(
                 "SELECT fecha_hora, numero_pedido, codigo_venta, producto, "
-                "producto_norm, cantidad, total, rubro, subrubro, area, sector "
+                "producto_norm, cantidad, total, rubro, subrubro, area, sector, "
+                "costo_unitario, margen_pct, food_cost_pct "
                 "FROM ventas", conn,
             )
         finally:
