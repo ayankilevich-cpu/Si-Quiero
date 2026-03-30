@@ -104,7 +104,19 @@ def render(loader, engine, **kwargs):
     total_facturacion = df_filt["total"].sum() if not df_filt.empty else 0
     total_unidades = df_filt["cantidad"].sum() if not df_filt.empty else 0
     n_productos = df_filt["producto_norm"].nunique() if not df_filt.empty else 0
-    margen_prom = tabla["Margen %"].mean() if not tabla.empty else 0
+
+    margen_prom = 0
+    if not tabla.empty and not df_filt.empty:
+        ventas_prod = df_filt.groupby("producto_norm")["total"].sum()
+        merged_m = tabla.copy()
+        merged_m["_key"] = merged_m["Producto"].str.strip().str.upper()
+        merged_m = merged_m[merged_m["_key"].isin(ventas_prod.index)]
+        merged_m["_fact"] = merged_m["_key"].map(ventas_prod).fillna(0)
+        total_matched = merged_m["_fact"].sum()
+        if total_matched > 0:
+            margen_prom = (merged_m["Margen %"] * merged_m["_fact"]).sum() / total_matched
+        else:
+            margen_prom = tabla.loc[tabla["Costo"] > 0, "Margen %"].mean()
 
     col1.metric("Facturación total", fmt_ars(total_facturacion))
     col2.metric("Unidades vendidas", f"{int(total_unidades):,}".replace(",", "."))
