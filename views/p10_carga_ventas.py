@@ -39,14 +39,15 @@ def _find_header_row(raw: pd.DataFrame, max_scan: int = 20) -> int | None:
 def _parse_comma_number(val) -> float:
     if pd.isna(val):
         return 0.0
-    s = str(val).strip().replace(".", "").replace(",", ".")
+    if isinstance(val, (int, float)):
+        return float(val)
+    s = str(val).strip()
+    if "," in s:
+        s = s.replace(".", "").replace(",", ".")
     try:
         return float(s)
-    except ValueError:
-        try:
-            return float(val)
-        except (ValueError, TypeError):
-            return 0.0
+    except (ValueError, TypeError):
+        return 0.0
 
 
 def _parse_pos_export(uploaded) -> pd.DataFrame | None:
