@@ -21,7 +21,7 @@ def _add_date_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     if df.empty or "fecha_hora" not in df.columns:
         return df
-    df["_fecha_parsed"] = pd.to_datetime(df["fecha_hora"], dayfirst=True, errors="coerce")
+    df["_fecha_parsed"] = pd.to_datetime(df["fecha_hora"], errors="coerce")
     df["_has_date"] = df["_fecha_parsed"].notna()
     df["anio"] = df["_fecha_parsed"].dt.year
     df["mes_num"] = df["_fecha_parsed"].dt.month

@@ -415,7 +415,7 @@ def _render_analisis_tickets(loader):
 
     if "fecha_hora" in df.columns:
         df_ts = df.copy()
-        df_ts["fecha_hora"] = pd.to_datetime(df_ts["fecha_hora"], dayfirst=True, errors="coerce")
+        df_ts["fecha_hora"] = pd.to_datetime(df_ts["fecha_hora"], errors="coerce")
         df_ts = df_ts.dropna(subset=["fecha_hora"])
 
         if not df_ts.empty:
