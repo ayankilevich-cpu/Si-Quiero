@@ -16,23 +16,26 @@ _MESES_ES = {
 }
 
 
-def _prepare_ventas(df_raw: pd.DataFrame) -> pd.DataFrame:
-    """Parsea fecha_hora y agrega columnas de año/mes."""
-    df = df_raw.copy()
-    if df.empty:
+def _add_date_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Agrega columnas de fecha parseada, año y mes. No descarta filas."""
+    df = df.copy()
+    if df.empty or "fecha_hora" not in df.columns:
         return df
-    df["fecha_hora"] = pd.to_datetime(df["fecha_hora"], dayfirst=True, errors="coerce")
-    df = df.dropna(subset=["fecha_hora"])
-    df["anio"] = df["fecha_hora"].dt.year
-    df["mes_num"] = df["fecha_hora"].dt.month
+    df["_fecha_parsed"] = pd.to_datetime(df["fecha_hora"], dayfirst=True, errors="coerce")
+    df["_has_date"] = df["_fecha_parsed"].notna()
+    df["anio"] = df["_fecha_parsed"].dt.year
+    df["mes_num"] = df["_fecha_parsed"].dt.month
     df["mes"] = df["mes_num"].map(_MESES_ES)
-    df["anio_mes"] = df["anio"].astype(str) + "-" + df["mes_num"].apply(lambda x: f"{x:02d}")
+    df["anio_mes"] = (
+        df["anio"].astype("Int64").astype(str) + "-" +
+        df["mes_num"].apply(lambda x: f"{int(x):02d}" if pd.notna(x) else "00")
+    )
     return df
 
 
 def _build_resumen_from_detail(df: pd.DataFrame) -> pd.DataFrame:
     """Genera un resumen por producto a partir del detalle filtrado."""
-    if df.empty:
+    if df.empty or "producto_norm" not in df.columns:
         return pd.DataFrame()
     agg = df.groupby("producto_norm").agg(
         producto=("producto", "first"),
@@ -53,30 +56,34 @@ def _build_resumen_from_detail(df: pd.DataFrame) -> pd.DataFrame:
 def render(loader, engine, **kwargs):
     st.header("Dashboard Principal")
 
-    df_ventas_raw = loader.load_ventas()
-    df_ventas = _prepare_ventas(df_ventas_raw)
+    df_raw = loader.load_ventas()
+    df_ventas = _add_date_columns(df_raw)
     tabla = engine.tabla_rentabilidad_productos()
 
     ice_svc = kwargs.get("ice_svc") or engine.ice_svc
     helado_info = ice_svc.costo_ponderado_general()
 
     # ── Filtro de período ──
+    is_acumulado = True
+    label_periodo = "Acumulado"
+
     if not df_ventas.empty:
+        df_with_dates = df_ventas[df_ventas["_has_date"]]
         meses_disponibles = (
-            df_ventas[["anio_mes", "anio", "mes_num", "mes"]]
+            df_with_dates[["anio_mes", "anio", "mes_num", "mes"]]
             .drop_duplicates()
             .sort_values("anio_mes")
         )
         opciones_mes = ["Acumulado"] + [
-            f"{row['mes']} {row['anio']}"
+            f"{row['mes']} {row['anio']:.0f}"
             for _, row in meses_disponibles.iterrows()
         ]
         filtro = st.selectbox("Período", opciones_mes, index=0, key="dash_filtro_mes")
 
         if filtro == "Acumulado":
             df_filt = df_ventas
-            label_periodo = "Acumulado"
         else:
+            is_acumulado = False
             parts = filtro.rsplit(" ", 1)
             mes_name, anio_sel = parts[0], int(parts[1])
             mes_num_sel = {v: k for k, v in _MESES_ES.items()}[mes_name]
@@ -107,7 +114,6 @@ def render(loader, engine, **kwargs):
     n_tickets = df_filt["numero_pedido"].nunique() if not df_filt.empty else 0
     ticket_prom = total_facturacion / n_tickets if n_tickets > 0 else 0
 
-    # Participación helado
     fact_helado = 0
     if not df_filt.empty and "rubro" in df_filt.columns:
         fact_helado = df_filt.loc[
