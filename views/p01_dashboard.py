@@ -21,7 +21,7 @@ def _prepare_ventas(df_raw: pd.DataFrame) -> pd.DataFrame:
     df = df_raw.copy()
     if df.empty:
         return df
-    df["fecha_hora"] = pd.to_datetime(df["fecha_hora"], errors="coerce")
+    df["fecha_hora"] = pd.to_datetime(df["fecha_hora"], dayfirst=True, errors="coerce")
     df = df.dropna(subset=["fecha_hora"])
     df["anio"] = df["fecha_hora"].dt.year
     df["mes_num"] = df["fecha_hora"].dt.month

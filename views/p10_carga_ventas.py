@@ -72,6 +72,11 @@ def _parse_pos_export(uploaded) -> pd.DataFrame | None:
     if "producto" not in df.columns or "numero_pedido" not in df.columns:
         return None
 
+    if "fecha_hora" in df.columns:
+        df["fecha_hora"] = pd.to_datetime(
+            df["fecha_hora"], dayfirst=True, errors="coerce",
+        ).dt.strftime("%Y-%m-%d %H:%M:%S")
+
     for col in ("cantidad", "total"):
         if col in df.columns:
             df[col] = df[col].apply(_parse_comma_number)
@@ -409,7 +414,7 @@ def _render_analisis_tickets(loader):
 
     if "fecha_hora" in df.columns:
         df_ts = df.copy()
-        df_ts["fecha_hora"] = pd.to_datetime(df_ts["fecha_hora"], errors="coerce")
+        df_ts["fecha_hora"] = pd.to_datetime(df_ts["fecha_hora"], dayfirst=True, errors="coerce")
         df_ts = df_ts.dropna(subset=["fecha_hora"])
 
         if not df_ts.empty:
