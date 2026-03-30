@@ -154,7 +154,10 @@ def get_connection(db_path: Path | None = None) -> sqlite3.Connection:
     """Abre una conexión a la base SQLite."""
     path = db_path or DB_PATH
     conn = sqlite3.connect(str(path))
-    conn.execute("PRAGMA journal_mode=WAL")
+    try:
+        conn.execute("PRAGMA journal_mode=DELETE")
+    except sqlite3.OperationalError:
+        pass
     conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row
     return conn
