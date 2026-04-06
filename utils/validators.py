@@ -41,7 +41,18 @@ def validar_productos_sin_componentes(
 def validar_helado_costo_disponible(df_helado: pd.DataFrame) -> list[str]:
     if df_helado.empty:
         return ["No hay remitos de helado cargados — costo ponderado no disponible"]
-    return []
+    alertas = []
+    tk = pd.to_numeric(df_helado["kilos"], errors="coerce").fillna(0).sum()
+    ti = pd.to_numeric(df_helado["importe_total"], errors="coerce").fillna(0).sum()
+    if tk > 0:
+        cp = ti / tk
+        if cp < 5000:
+            alertas.append(
+                f"Costo ponderado helado muy bajo (~${cp:,.0f}/kg). Suele indicar que se cargó "
+                "precio $/kg como si fuera subtotal de línea, o kilos/importes mal leídos del PDF "
+                "(formato de miles). Revisá remitos y la opción «precio $/kg» en la carga."
+            )
+    return alertas
 
 
 def validar_combos_sin_items(

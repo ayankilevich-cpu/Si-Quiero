@@ -6,6 +6,8 @@ import re
 from datetime import date, datetime
 from typing import Optional
 
+from utils.number_parse import parse_ar_decimal
+
 
 def parse_remito_text(text: str) -> dict:
     """Parsea el texto extraído de un PDF de remito de helado.
@@ -61,18 +63,19 @@ def _extract_proveedor(lines: list[str]) -> str:
 
 
 def _extract_lineas(lines: list[str]) -> list[dict]:
-    """Extrae líneas de detalle: CANT SABOR PRECIO"""
+    """Extrae líneas de detalle: CANT SABOR IMPORTE (subtotal de línea o precio/kg según remito)."""
     resultado = []
+    # Kg: entero o decimal (10 / 10,5 / 10.5). Importe: formato AR con o sin decimales.
     pattern = re.compile(
-        r"^(\d+[.,]\d+)\s+(.+?)\s+([\d.]+[.,]\d+)\s*\$?\s*$"
+        r"^(\d+(?:[.,]\d+)?)\s+(.+?)\s+([\d.,\$]+)\s*$"
     )
 
     for line in lines:
         m = pattern.match(line)
         if m:
-            kilos = float(m.group(1).replace(",", "."))
+            kilos = parse_ar_decimal(m.group(1))
             sabor = m.group(2).strip()
-            importe = float(m.group(3).replace(".", "").replace(",", "."))
+            importe = parse_ar_decimal(m.group(3))
 
             if importe > 1000 and kilos > 0:
                 costo_kg = round(importe / kilos, 2)
@@ -88,9 +91,9 @@ def _extract_lineas(lines: list[str]) -> list[dict]:
 
 def _extract_total(lines: list[str]) -> float:
     for line in reversed(lines):
-        m = re.search(r"TOTAL:\s*([\d.]+[.,]\d+)", line)
+        m = re.search(r"TOTAL:\s*([\d.,\$]+)", line, re.I)
         if m:
-            return float(m.group(1).replace(".", "").replace(",", "."))
+            return parse_ar_decimal(m.group(1))
     return 0.0
 
 

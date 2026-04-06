@@ -66,11 +66,15 @@ class IceCreamCostService:
         proveedor: str,
         lineas: list[dict],
         remito_origen: str = "manual",
+        *,
+        precio_es_unitario: bool = False,
     ) -> int:
         """Agrega líneas de un remito al historial.
 
         Args:
             lineas: [{sabor, kilos, importe}, ...]
+            precio_es_unitario: Si True, ``importe`` es $/kg y se multiplica por kilos
+                para obtener el subtotal de la línea (caso típico de remitos con P.U.).
 
         Returns:
             Número de líneas agregadas.
@@ -82,6 +86,8 @@ class IceCreamCostService:
         for linea in lineas:
             kilos = float(linea.get("kilos", 0))
             importe = float(linea.get("importe", 0))
+            if precio_es_unitario and kilos > 0:
+                importe = importe * kilos
             nuevas.append({
                 "purchase_id": next_id,
                 "fecha": fecha,
@@ -102,7 +108,13 @@ class IceCreamCostService:
 
         return len(nuevas)
 
-    def agregar_remito_pdf(self, parsed: dict, filename: str = "pdf") -> int:
+    def agregar_remito_pdf(
+        self,
+        parsed: dict,
+        filename: str = "pdf",
+        *,
+        precio_es_unitario: bool = False,
+    ) -> int:
         """Agrega un remito parseado desde PDF."""
         if "error" in parsed:
             return 0
@@ -116,6 +128,7 @@ class IceCreamCostService:
             proveedor=parsed.get("proveedor", "Desconocido"),
             lineas=lineas,
             remito_origen=filename,
+            precio_es_unitario=precio_es_unitario,
         )
 
     def historial_compras(self) -> pd.DataFrame:
